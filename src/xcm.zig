@@ -19,13 +19,13 @@
 // vless://84ab3c1e-173d-4de2-a15b-0567bf4d9372@140.235.130.61:7443?encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.apple.com&fp=chrome&pbk=myw9aQ1coOiGU3WXAvoDIVsgQ-_n1gvbdZLcYf30y2I&sid=e62317ec29decdc7&type=tcp#cudy-fr69
 //
 
-const Clients = struct {
+const std = @import("std");
+
+const Client = struct {
     id: []const u8,
     email: []const u8,
     flow: []const u8,
 };
-
-const std = @import("std");
 
 const version = "0.0";
 const default_xray_config_path = "/usr/local/etc/xray/config.json";
@@ -50,6 +50,82 @@ fn writeStdout(comptime fmt: []const u8, args: anytype) void {
     var buf: [4096]u8 = undefined;
     const slice = std.mem.print(&buf, fmt, args) catch return;
     writeAllFd(std.posix.STDOUT_FILENO, slice);
+}
+
+fn getString(value: std.json.Value, key: []const u8) ?[]const u8 {
+    if (value != .object)
+        return null;
+
+    const field = value.object.get(key) orelse return null;
+    if (field != .string)
+        return null;
+
+    return field.string;
+}
+
+fn getClients(
+    alloc: std.mem.Allocator,
+    root: std.json.Value,
+    target_protocol: []const u8,
+) ![]Client {
+    if (root != .object)
+        return error.InvalidConfigRoot;
+
+    const inbounds_value = root.object.get("inbounds") orelse return error.MissingInbound;
+
+    if (inbounds_value != .array)
+        return error.InvalidInbounds;
+
+    for (inbounds_value.array.items, 0..) |inbound, index| {
+        if (inbound != .object)
+            continue;
+
+        const tag = getString(inbound, "tag") orelse "(not tag)";
+        const protocol = getString(inbound, "protocol") orelse "(unknow)";
+
+        std.log.debug(
+            "\nInbound [{d}]: tag={s}, protocol={s}\n",
+            .{ index, tag, protocol },
+        );
+
+        if (!std.mem.eql(u8, protocol, target_protocol)) {
+            std.log.debug("protocol = {s} not target", .{protocol});
+            continue;
+        }
+
+        const settings = inbound.object.get("settings") orelse return error.MissingSettings;
+        if (settings != .object)
+            continue;
+
+        const clients_value = settings.object.get("clients") orelse return error.MissingClients;
+        if (clients_value != .array)
+            continue;
+
+        var clients: std.ArrayList(Client) = .empty;
+        errdefer clients.deinit(alloc);
+
+        for (clients_value.array.items, 0..) |client, client_index| {
+            if (client != .object)
+                continue;
+
+            const id = getString(client, "id") orelse "(no id)";
+            const email = getString(client, "email") orelse "(no email)";
+            const flow = getString(client, "flow") orelse "(no flow)";
+
+            std.log.debug(
+                "  Client [{d}]: email={s}, id={s}, flow={s}\n",
+                .{ client_index, email, id, flow },
+            );
+
+            try clients.append(alloc, .{
+                .id = id,
+                .email = email,
+                .flow = flow,
+            });
+        }
+        return try clients.toOwnedSlice(alloc);
+    }
+    return error.ClientsNotFound;
 }
 
 pub fn main(init: std.process.Init) !void {
@@ -96,7 +172,7 @@ pub fn main(init: std.process.Init) !void {
     );
     defer allocator.free(json_content);
 
-    std.debug.print("Xray json:\n{s}\n", .{json_content});
+    // std.debug.print("Xray json:\n{s}\n", .{json_content});
 
     const parsed = try std.json.parseFromSlice(
         std.json.Value,
@@ -106,5 +182,15 @@ pub fn main(init: std.process.Init) !void {
     );
     defer parsed.deinit();
 
-    std.debug.print("Xray json(parsed):\n{any}\n", .{parsed});
+    // std.debug.print("Xray json(parsed):\n{any}\n", .{parsed});
+
+    const clients = try getClients(allocator, parsed.value, "vless");
+    defer allocator.free(clients);
+
+    for (clients, 0..) |client, i| {
+        std.log.debug(
+            "  Client [{d}]: email={s}, id={s}, flow={s}\n",
+            .{ i, client.email, client.id, client.flow },
+        );
+    }
 }
