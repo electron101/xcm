@@ -19,10 +19,6 @@
 // vless://84ab3c1e-173d-4de2-a15b-0567bf4d9372@140.235.130.61:7443?encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.apple.com&fp=chrome&pbk=myw9aQ1coOiGU3WXAvoDIVsgQ-_n1gvbdZLcYf30y2I&sid=e62317ec29decdc7&type=tcp#cudy-fr69
 //
 
-// const XrayConf = struct {
-//     ip
-// };
-
 const Clients = struct {
     id: []const u8,
     email: []const u8,
