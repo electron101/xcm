@@ -63,6 +63,70 @@ fn getString(value: std.json.Value, key: []const u8) ?[]const u8 {
     return field.string;
 }
 
+fn findClientsArray(
+    root: *std.json.Value,
+    target_protocol: []const u8,
+) !*std.json.Array {
+    if (root.* != .object)
+        return error.InvalidConfigRoot;
+
+    const inbounds = root.object.getPtr("inbounds") orelse
+        return error.MissingInbound;
+
+    if (inbounds.* != .array)
+        return error.InvalidInbounds;
+
+    for (inbounds.array.items) |*inbound| {
+        if (inbound.* != .object)
+            continue;
+
+        const protocol = getString(inbound.*, "protocol") orelse continue;
+
+        if (!std.mem.eql(u8, protocol, target_protocol)) {
+            // std.log.debug("protocol = {s} not target", .{protocol});
+            continue;
+        }
+
+        const settings = inbound.object.getPtr("settings") orelse
+            return error.MissingSettings;
+
+        if (settings.* != .object)
+            return error.InvalidSettings;
+
+        const clients = settings.object.getPtr("clients") orelse
+            return error.MissingClients;
+
+        return &clients.array;
+    }
+
+    return error.InboundsNotFound;
+}
+
+fn addClient(
+    alloc: std.mem.Allocator,
+    root: *std.json.Value,
+    target_protocol: []const u8,
+    client: Client,
+) !void {
+    const clients = try findClientsArray(root, target_protocol);
+
+    for (clients.items) |item| {
+        const id = getString(item, "id") orelse continue;
+        if (std.mem.eql(u8, id, client.id)) {
+            return error.DuplicateClientId;
+        }
+    }
+
+    var obj: std.json.ObjectMap = .empty;
+    errdefer obj.deinit(alloc);
+
+    try obj.put(alloc, "id", .{ .string = client.id });
+    try obj.put(alloc, "email", .{ .string = client.email });
+    try obj.put(alloc, "flow", .{ .string = client.flow });
+
+    try clients.append(.{ .object = obj });
+}
+
 fn getClients(
     alloc: std.mem.Allocator,
     root: std.json.Value,
@@ -128,8 +192,30 @@ fn getClients(
     return error.ClientsNotFound;
 }
 
+fn saveConfig(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    config_path: []const u8,
+    root: std.json.Value,
+) !void {
+    const json_text = try std.json.Stringify.valueAlloc(
+        allocator,
+        root,
+        .{ .whitespace = .indent_2 },
+    );
+    defer allocator.free(json_text);
+
+    try std.Io.Dir.cwd().writeFile(io, .{
+        .sub_path = config_path,
+        .data = json_text,
+    });
+}
+
 pub fn main(init: std.process.Init) !void {
-    const allocator = init.gpa;
+    var arena = std.heap.ArenaAllocator.init(init.gpa);
+    defer arena.deinit();
+
+    const allocator = arena.allocator();
     const io = init.io;
 
     var args = try init.minimal.args.iterateAllocator(allocator);
@@ -174,7 +260,7 @@ pub fn main(init: std.process.Init) !void {
 
     // std.debug.print("Xray json:\n{s}\n", .{json_content});
 
-    const parsed = try std.json.parseFromSlice(
+    var parsed = try std.json.parseFromSlice(
         std.json.Value,
         allocator,
         json_content,
@@ -183,6 +269,14 @@ pub fn main(init: std.process.Init) !void {
     defer parsed.deinit();
 
     // std.debug.print("Xray json(parsed):\n{any}\n", .{parsed});
+
+    const new_client: Client = .{
+        .id = "11111111-1111-4111-8111-111111111111",
+        .email = "alice",
+        .flow = "xtls-rprx-vision",
+    };
+
+    try addClient(allocator, &parsed.value, "vless", new_client);
 
     const clients = try getClients(allocator, parsed.value, "vless");
     defer allocator.free(clients);
@@ -193,4 +287,6 @@ pub fn main(init: std.process.Init) !void {
             .{ i, client.email, client.id, client.flow },
         );
     }
+
+    try saveConfig(allocator, init.io, "config.json", parsed.value);
 }
