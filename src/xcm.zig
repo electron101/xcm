@@ -6,6 +6,9 @@
 //
 // 3. show user (id, vless link, qr???)
 //
+// 4. add Global Menu as:
+//    > ...
+//
 //
 // "clients": [
 // {
@@ -195,7 +198,8 @@ fn getClients(
 fn saveConfig(
     allocator: std.mem.Allocator,
     io: std.Io,
-    config_path: []const u8,
+    dir: std.Io.Dir,
+    org_config_filename: []const u8,
     root: std.json.Value,
 ) !void {
     const json_text = try std.json.Stringify.valueAlloc(
@@ -205,10 +209,40 @@ fn saveConfig(
     );
     defer allocator.free(json_text);
 
-    try std.Io.Dir.cwd().writeFile(io, .{
-        .sub_path = config_path,
-        .data = json_text,
-    });
+    std.log.debug("org_config_filename: {s}", .{org_config_filename});
+
+    // Use a timestamp to avoid overwriting previous backups.
+    const timestamp_ns = std.Io.Timestamp.now(io, .real).toNanoseconds();
+    const backup_name = try std.fmt.allocPrint(
+        allocator,
+        "{s}.backup.{d}",
+        .{ org_config_filename, timestamp_ns },
+    );
+    defer allocator.free(backup_name);
+
+    // TODO: Validate the generated config before modifying the original.
+    // Consider running: xray run -test -config <temp_config_path>
+
+    var new_config_file = try dir.createFileAtomic(
+        io,
+        org_config_filename,
+        .{ .replace = true },
+    );
+    defer new_config_file.deinit(io);
+
+    try new_config_file.file.writeStreamingAll(io, json_text);
+    try new_config_file.file.sync(io);
+
+    // Move the original config to a backup before installing the new one.
+    try dir.renamePreserve(org_config_filename, dir, backup_name, io);
+
+    // Install the new config. Restore the backup if replacement fails.
+    new_config_file.replace(io) catch |err| {
+        dir.renamePreserve(backup_name, dir, org_config_filename, io) catch {
+            return error.BackupRestoreFailed;
+        };
+        return err;
+    };
 }
 
 pub fn main(init: std.process.Init) !void {
@@ -270,6 +304,7 @@ pub fn main(init: std.process.Init) !void {
 
     // std.debug.print("Xray json(parsed):\n{any}\n", .{parsed});
 
+    // TODO: Get info about new client from user input
     const new_client: Client = .{
         .id = "11111111-1111-4111-8111-111111111111",
         .email = "alice",
@@ -288,5 +323,5 @@ pub fn main(init: std.process.Init) !void {
         );
     }
 
-    try saveConfig(allocator, init.io, "config.json", parsed.value);
+    try saveConfig(allocator, init.io, std.Io.Dir.cwd(), xray_config_path, parsed.value);
 }
