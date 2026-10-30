@@ -23,177 +23,12 @@
 //
 
 const std = @import("std");
-
-const Client = struct {
-    id: []const u8,
-    email: []const u8,
-    flow: []const u8,
-};
+const writeStdout = @import("utils.zig").writeStdout;
+const vless_clients = @import("clients.zig");
+const Client = @import("clients.zig").Client;
 
 const version = "0.0";
 const default_xray_config_path = "/usr/local/etc/xray/config.json";
-
-fn writeAllFd(fd: std.posix.fd_t, bytes: []const u8) void {
-    var written: usize = 0;
-    while (written < bytes.len) {
-        const rc = std.os.linux.write(fd, bytes[written..].ptr, bytes.len - written);
-        switch (std.os.linux.errno(rc)) {
-            .SUCCESS => {
-                if (rc == 0) return;
-                written += rc;
-            },
-            .INTR => continue,
-            else => return,
-        }
-    }
-}
-
-/// Write a formatted string to stdout via posix write.
-fn writeStdout(comptime fmt: []const u8, args: anytype) void {
-    var buf: [4096]u8 = undefined;
-    const slice = std.mem.print(&buf, fmt, args) catch return;
-    writeAllFd(std.posix.STDOUT_FILENO, slice);
-}
-
-fn getString(value: std.json.Value, key: []const u8) ?[]const u8 {
-    if (value != .object)
-        return null;
-
-    const field = value.object.get(key) orelse return null;
-    if (field != .string)
-        return null;
-
-    return field.string;
-}
-
-fn findClientsArray(
-    root: *std.json.Value,
-    target_protocol: []const u8,
-) !*std.json.Array {
-    if (root.* != .object)
-        return error.InvalidConfigRoot;
-
-    const inbounds = root.object.getPtr("inbounds") orelse
-        return error.MissingInbound;
-
-    if (inbounds.* != .array)
-        return error.InvalidInbounds;
-
-    for (inbounds.array.items) |*inbound| {
-        if (inbound.* != .object)
-            continue;
-
-        const protocol = getString(inbound.*, "protocol") orelse continue;
-
-        if (!std.mem.eql(u8, protocol, target_protocol)) {
-            // std.log.debug("protocol = {s} not target", .{protocol});
-            continue;
-        }
-
-        const settings = inbound.object.getPtr("settings") orelse
-            return error.MissingSettings;
-
-        if (settings.* != .object)
-            return error.InvalidSettings;
-
-        const clients = settings.object.getPtr("clients") orelse
-            return error.MissingClients;
-
-        return &clients.array;
-    }
-
-    return error.InboundsNotFound;
-}
-
-fn addClient(
-    alloc: std.mem.Allocator,
-    root: *std.json.Value,
-    target_protocol: []const u8,
-    client: Client,
-) !void {
-    const clients = try findClientsArray(root, target_protocol);
-
-    for (clients.items) |item| {
-        const id = getString(item, "id") orelse continue;
-        if (std.mem.eql(u8, id, client.id)) {
-            return error.DuplicateClientId;
-        }
-    }
-
-    var obj: std.json.ObjectMap = .empty;
-    errdefer obj.deinit(alloc);
-
-    try obj.put(alloc, "id", .{ .string = client.id });
-    try obj.put(alloc, "email", .{ .string = client.email });
-    try obj.put(alloc, "flow", .{ .string = client.flow });
-
-    try clients.append(.{ .object = obj });
-}
-
-fn getClients(
-    alloc: std.mem.Allocator,
-    root: std.json.Value,
-    target_protocol: []const u8,
-) ![]Client {
-    if (root != .object)
-        return error.InvalidConfigRoot;
-
-    const inbounds_value = root.object.get("inbounds") orelse return error.MissingInbound;
-
-    if (inbounds_value != .array)
-        return error.InvalidInbounds;
-
-    for (inbounds_value.array.items, 0..) |inbound, index| {
-        if (inbound != .object)
-            continue;
-
-        const tag = getString(inbound, "tag") orelse "(not tag)";
-        const protocol = getString(inbound, "protocol") orelse "(unknow)";
-
-        std.log.debug(
-            "\nInbound [{d}]: tag={s}, protocol={s}\n",
-            .{ index, tag, protocol },
-        );
-
-        if (!std.mem.eql(u8, protocol, target_protocol)) {
-            std.log.debug("protocol = {s} not target", .{protocol});
-            continue;
-        }
-
-        const settings = inbound.object.get("settings") orelse return error.MissingSettings;
-        if (settings != .object)
-            continue;
-
-        const clients_value = settings.object.get("clients") orelse return error.MissingClients;
-        if (clients_value != .array)
-            continue;
-
-        var clients: std.ArrayList(Client) = .empty;
-        errdefer clients.deinit(alloc);
-
-        for (clients_value.array.items, 0..) |client, client_index| {
-            if (client != .object)
-                continue;
-
-            const id = getString(client, "id") orelse "(no id)";
-            const email = getString(client, "email") orelse "(no email)";
-            const flow = getString(client, "flow") orelse "(no flow)";
-
-            std.log.debug(
-                "  Client [{d}]: email={s}, id={s}, flow={s}\n",
-                .{ client_index, email, id, flow },
-            );
-
-            try clients.append(alloc, .{
-                .id = id,
-                .email = email,
-                .flow = flow,
-            });
-        }
-        return try clients.toOwnedSlice(alloc);
-    }
-    return error.ClientsNotFound;
-}
 
 fn saveConfig(
     allocator: std.mem.Allocator,
@@ -311,9 +146,9 @@ pub fn main(init: std.process.Init) !void {
         .flow = "xtls-rprx-vision",
     };
 
-    try addClient(allocator, &parsed.value, "vless", new_client);
+    try vless_clients.addClient(allocator, &parsed.value, "vless", new_client);
 
-    const clients = try getClients(allocator, parsed.value, "vless");
+    const clients = try vless_clients.getClients(allocator, parsed.value, "vless");
     defer allocator.free(clients);
 
     for (clients, 0..) |client, i| {
