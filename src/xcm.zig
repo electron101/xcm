@@ -24,6 +24,7 @@
 
 const std = @import("std");
 const writeStdout = @import("utils.zig").writeStdout;
+const readStdinLine = @import("utils.zig").readStdinLine;
 const vless_clients = @import("clients.zig");
 const Client = @import("clients.zig").Client;
 
@@ -138,6 +139,20 @@ pub fn main(init: std.process.Init) !void {
     defer parsed.deinit();
 
     // std.debug.print("Xray json(parsed):\n{any}\n", .{parsed});
+
+    var buf: [256]u8 = undefined;
+    while (true) {
+        writeStdout("> ", .{});
+        if (readStdinLine(&buf)) |line| {
+            writeStdout("You input: \"{s}\"\n", .{line});
+            if (std.mem.eql(u8, line, "q") or std.mem.eql(u8, line, "quit")) {
+                writeStdout("Exit ... \n", .{});
+                return;
+            }
+        } else {
+            writeStdout("EOF or error \n", .{});
+        }
+    }
 
     // TODO: Get info about new client from user input
     const new_client: Client = .{
