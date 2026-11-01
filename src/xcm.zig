@@ -45,7 +45,7 @@ fn saveConfig(
     );
     defer allocator.free(json_text);
 
-    std.log.debug("org_config_filename: {s}", .{org_config_filename});
+    std.log.debug("saveConfig(): org_config_filename: {s}", .{org_config_filename});
 
     // Use a timestamp to avoid overwriting previous backups.
     const timestamp_ns = std.Io.Timestamp.now(io, .real).toNanoseconds();
@@ -142,36 +142,59 @@ pub fn main(init: std.process.Init) !void {
 
     var buf: [256]u8 = undefined;
     while (true) {
-        writeStdout("> ", .{});
+        writeStdout(
+            \\ menu:
+            \\ n) New user
+            \\ d) Delete user
+            \\ l) List all users
+            \\ q) Quit
+            \\
+            \\ n/d/l/q> 
+        , .{});
+
         if (readStdinLine(&buf)) |line| {
             writeStdout("You input: \"{s}\"\n", .{line});
             if (std.mem.eql(u8, line, "q") or std.mem.eql(u8, line, "quit")) {
                 writeStdout("Exit ... \n", .{});
                 return;
+            } else if (std.mem.eql(u8, line, "n")) {
+                // TODO: Get info about new client from user input
+                const new_client: Client = .{
+                    .id = "11111111-1111-4111-8111-111111111111",
+                    .email = "alice",
+                    .flow = "xtls-rprx-vision",
+                };
+
+                vless_clients.addClient(allocator, &parsed.value, "vless", new_client) catch |err| {
+                    switch (err) {
+                        error.DuplicateClientId => {
+                            writeStdout("This user alredy exist! \n", .{});
+                            continue;
+                        },
+                        else => return,
+                    }
+                };
+
+                try saveConfig(allocator, init.io, std.Io.Dir.cwd(), xray_config_path, parsed.value,);
+            } else if (std.mem.eql(u8, line, "d")) {
+                writeStdout("not impl yet \n", .{});
+            } else if (std.mem.eql(u8, line, "l")) {
+                const clients = try vless_clients.getClients(
+                    allocator,
+                    parsed.value,
+                    "vless",
+                );
+                defer allocator.free(clients);
+
+                for (clients, 0..) |client, i| {
+                    std.log.debug(
+                        "  Client [{d}]: email={s}, id={s}, flow={s}\n",
+                        .{ i, client.email, client.id, client.flow },
+                    );
+                }
             }
         } else {
             writeStdout("EOF or error \n", .{});
         }
     }
-
-    // TODO: Get info about new client from user input
-    const new_client: Client = .{
-        .id = "11111111-1111-4111-8111-111111111111",
-        .email = "alice",
-        .flow = "xtls-rprx-vision",
-    };
-
-    try vless_clients.addClient(allocator, &parsed.value, "vless", new_client);
-
-    const clients = try vless_clients.getClients(allocator, parsed.value, "vless");
-    defer allocator.free(clients);
-
-    for (clients, 0..) |client, i| {
-        std.log.debug(
-            "  Client [{d}]: email={s}, id={s}, flow={s}\n",
-            .{ i, client.email, client.id, client.flow },
-        );
-    }
-
-    try saveConfig(allocator, init.io, std.Io.Dir.cwd(), xray_config_path, parsed.value);
 }
