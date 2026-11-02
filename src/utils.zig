@@ -59,3 +59,35 @@ pub fn readStdinLine(buf: []u8) ?[]u8 {
     }
     return line;
 }
+
+/// Generate UUID v4 in format: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+/// https://www.rfc-editor.org/rfc/rfc9562.html
+pub fn randomUUIDv4(io: std.Io, buf: *[36]u8) void {
+    var bytes: [16]u8 = undefined;
+    const rng: std.Random.IoSource = .{ .io = io };
+    rng.interface().bytes(&bytes);
+
+    //
+    // Set version and variant:
+    // 00000000-0000-4000-8000-000000000000
+    //
+    // More info:
+    // https://www.rfc-editor.org/rfc/rfc9562.html#name-version-field
+    // https://www.rfc-editor.org/rfc/rfc9562.html#name-variant-field
+    //
+    bytes[6] = (bytes[6] & 0x0f) | 0x40; // version = 4
+    bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant = 10xx
+
+    const hex = "0123456789abcdef";
+    var i: usize = 0;
+    var j: usize = 0;
+    while (i < 16) : (i += 1) {
+        if (i == 4 or i == 6 or i == 8 or i == 10) {
+            buf[j] = '-';
+            j += 1;
+        }
+        buf[j] = hex[bytes[i] >> 4];
+        buf[j + 1] = hex[bytes[i] & 0x0f];
+        j += 2;
+    }
+}

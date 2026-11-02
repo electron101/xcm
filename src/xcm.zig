@@ -25,6 +25,7 @@
 const std = @import("std");
 const writeStdout = @import("utils.zig").writeStdout;
 const readStdinLine = @import("utils.zig").readStdinLine;
+const randomUUIDv4 = @import("utils.zig").randomUUIDv4;
 const vless_clients = @import("clients.zig");
 const Client = @import("clients.zig").Client;
 
@@ -159,8 +160,12 @@ pub fn main(init: std.process.Init) !void {
                 return;
             } else if (std.mem.eql(u8, line, "n")) {
                 // TODO: Get info about new client from user input
+
+                var uuid: [36]u8 = @splat(0);
+                randomUUIDv4(io, &uuid);
+
                 const new_client: Client = .{
-                    .id = "11111111-1111-4111-8111-111111111111",
+                    .id = try allocator.dupe(u8, &uuid),
                     .email = "alice",
                     .flow = "xtls-rprx-vision",
                 };
@@ -175,7 +180,7 @@ pub fn main(init: std.process.Init) !void {
                     }
                 };
 
-                try saveConfig(allocator, init.io, std.Io.Dir.cwd(), xray_config_path, parsed.value,);
+                try saveConfig(allocator, init.io, std.Io.Dir.cwd(), xray_config_path, parsed.value);
             } else if (std.mem.eql(u8, line, "d")) {
                 writeStdout("not impl yet \n", .{});
             } else if (std.mem.eql(u8, line, "l")) {
