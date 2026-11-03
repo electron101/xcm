@@ -26,6 +26,7 @@ const std = @import("std");
 const writeStdout = @import("utils.zig").writeStdout;
 const readStdinLine = @import("utils.zig").readStdinLine;
 const randomUUIDv4 = @import("utils.zig").randomUUIDv4;
+const isValidJsonStringContent = @import("utils.zig").isValidJsonStringContent;
 const vless_clients = @import("clients.zig");
 const Client = @import("clients.zig").Client;
 
@@ -159,14 +160,25 @@ pub fn main(init: std.process.Init) !void {
                 writeStdout("Exit ... \n", .{});
                 return;
             } else if (std.mem.eql(u8, line, "n")) {
-                // TODO: Get info about new client from user input
-
+                // UUID
                 var uuid: [36]u8 = @splat(0);
                 randomUUIDv4(io, &uuid);
 
+                // Email
+                var email_buf: [256]u8 = undefined;
+                var email: []const u8 = undefined;
+                while (true) {
+                    writeStdout("user name (email)> ", .{});
+
+                    email = readStdinLine(&email_buf) orelse "";
+                    if (isValidJsonStringContent(email))
+                        break;
+                }
+                email = if (email.len == 0) "default" else email;
+
                 const new_client: Client = .{
                     .id = try allocator.dupe(u8, &uuid),
-                    .email = "alice",
+                    .email = try allocator.dupe(u8, email),
                     .flow = "xtls-rprx-vision",
                 };
 

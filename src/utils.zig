@@ -91,3 +91,15 @@ pub fn randomUUIDv4(io: std.Io, buf: *[36]u8) void {
         j += 2;
     }
 }
+
+pub fn isValidJsonStringContent(str: []const u8) bool {
+    for (str) |c| {
+        switch (c) {
+            '"', '\\' => return false,
+
+            // All codes from 0x00–0x1F are control characters (non-printable)
+            else => if (c < 0x20) return false,
+        }
+    }
+    return true;
+}
