@@ -204,10 +204,14 @@ pub fn main(init: std.process.Init) !void {
                 defer allocator.free(clients);
 
                 for (clients, 0..) |client, i| {
-                    std.log.debug(
-                        "  Client [{d}]: email={s}, id={s}, flow={s}\n",
-                        .{ i, client.email, client.id, client.flow },
-                    );
+                    writeStdout(
+                        \\ Client [{d}]: 
+                        \\              email:  {s} 
+                        \\              id:     {s} 
+                        \\              flow:   {s}
+                        \\
+                        \\
+                    , .{ i, client.email, client.id, client.flow });
                 }
             }
         } else {
