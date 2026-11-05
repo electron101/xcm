@@ -142,7 +142,7 @@ pub fn main(init: std.process.Init) !void {
 
     // std.debug.print("Xray json(parsed):\n{any}\n", .{parsed});
 
-    var buf: [256]u8 = undefined;
+    var input_buf: [256]u8 = undefined;
     while (true) {
         writeStdout(
             \\ menu:
@@ -154,23 +154,25 @@ pub fn main(init: std.process.Init) !void {
             \\ n/d/l/q> 
         , .{});
 
-        if (readStdinLine(&buf)) |line| {
-            writeStdout("You input: \"{s}\"\n", .{line});
+        if (readStdinLine(&input_buf)) |line| {
             if (std.mem.eql(u8, line, "q") or std.mem.eql(u8, line, "quit")) {
                 writeStdout("Exit ... \n", .{});
                 return;
             } else if (std.mem.eql(u8, line, "n")) {
+                //
+                // NEW
+                //
+
                 // UUID
                 var uuid: [36]u8 = @splat(0);
                 randomUUIDv4(io, &uuid);
 
                 // Email
-                var email_buf: [256]u8 = undefined;
                 var email: []const u8 = undefined;
                 while (true) {
                     writeStdout("user name (email)> ", .{});
 
-                    email = readStdinLine(&email_buf) orelse "";
+                    email = readStdinLine(&input_buf) orelse "";
                     if (isValidJsonStringContent(email))
                         break;
                 }
@@ -194,7 +196,59 @@ pub fn main(init: std.process.Init) !void {
 
                 try saveConfig(allocator, init.io, std.Io.Dir.cwd(), xray_config_path, parsed.value);
             } else if (std.mem.eql(u8, line, "d")) {
-                writeStdout("not impl yet \n", .{});
+
+                //
+                // DELETE
+                //
+
+                writeStdout("user number> ", .{});
+
+                var input_client_num: []const u8 = undefined;
+                input_client_num = readStdinLine(&input_buf) orelse break;
+                const num = std.fmt.parseInt(u32, input_client_num, 10) catch {
+                    writeStdout("not number! \n", .{});
+                    continue;
+                };
+
+                const selected_client = vless_clients.getClientByNum(&parsed.value, "vless", num) catch |err| {
+                    switch (err) {
+                        error.ClientNotFound => {
+                            writeStdout("Client not found! \n", .{});
+                            continue;
+                        },
+                        else => return,
+                    }
+                };
+
+                writeStdout("Delete client? \n", .{});
+                writeStdout("   email: {s} \n", .{selected_client.email});
+                writeStdout("   id:    {s} \n", .{selected_client.id});
+
+                var is_delete: bool = false;
+                while (true) {
+                    writeStdout("y/n> ", .{});
+                    const answer = readStdinLine(&input_buf) orelse continue;
+                    if (std.mem.eql(u8, answer, "n")) {
+                        is_delete = false;
+                        break;
+                    } else if (std.mem.eql(u8, answer, "y")) {
+                        is_delete = true;
+                        break;
+                    } else continue;
+                }
+
+                if (is_delete) {
+                    vless_clients.deleteClient(allocator, &parsed.value, "vless", selected_client.id) catch |err| {
+                        switch (err) {
+                            error.ClientNotFound => {
+                                writeStdout("Client not found! \n", .{});
+                                continue;
+                            },
+                            else => return,
+                        }
+                    };
+                    try saveConfig(allocator, init.io, std.Io.Dir.cwd(), xray_config_path, parsed.value);
+                }
             } else if (std.mem.eql(u8, line, "l")) {
                 const clients = try vless_clients.getClients(
                     allocator,

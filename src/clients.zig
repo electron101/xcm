@@ -145,3 +145,46 @@ pub fn getClients(
     }
     return error.ClientsNotFound;
 }
+
+pub fn getClientByNum(
+    root: *std.json.Value,
+    target_protocol: []const u8,
+    target_num: u32,
+) !Client {
+    const clients = try findClientsArray(root, target_protocol);
+
+    for (clients.items, 0..) |item, i| {
+        if (target_num == i) {
+            return .{
+               .id =  getString(item, "id") orelse continue,
+               .email =  getString(item, "email") orelse continue,
+               .flow = "",
+            };
+        }
+    }
+    return error.ClientNotFound;
+}
+
+pub fn deleteClient(
+    allocator: std.mem.Allocator,
+    root: *std.json.Value,
+    target_protocol: []const u8,
+    target_uuid: []const u8,
+) !void {
+    const clients = try findClientsArray(root, target_protocol);
+
+    for (clients.items, 0..) |item, i| {
+        const id = getString(item, "id") orelse continue;
+        if (std.mem.eql(u8, id, target_uuid)) {
+            std.log.debug("Client #{d} - {s} will be removed.\n", .{ i, id });
+            // Remove the client from the array.
+            var removed = clients.orderedRemove(i);
+
+            // Free the removed JSON object's allocated memory.
+            removed.object.deinit(allocator);
+
+            return;
+        }
+    }
+    return error.ClientNotFound;
+}
