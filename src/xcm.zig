@@ -122,12 +122,15 @@ pub fn main(init: std.process.Init) !void {
     const xray_config_path = first_arg orelse default_xray_config_path;
     writeStdout("I'll use this Xray config file: {s}\n", .{xray_config_path});
 
-    const json_content = try std.Io.Dir.cwd().readFileAlloc(
+    const json_content = std.Io.Dir.cwd().readFileAlloc(
         io,
         xray_config_path,
         allocator,
         .limited(1024 * 1024), // 1 MB
-    );
+    ) catch |err| {
+        writeStdout("{any}\n", .{err});
+        return;
+    };
     defer allocator.free(json_content);
 
     // std.debug.print("Xray json:\n{s}\n", .{json_content});
