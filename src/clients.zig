@@ -1,5 +1,7 @@
 const std = @import("std");
 
+const debug_log = false;
+
 pub const Client = struct {
     id: []const u8,
     email: []const u8,
@@ -101,10 +103,12 @@ pub fn getClients(
         const tag = getString(inbound, "tag") orelse "(not tag)";
         const protocol = getString(inbound, "protocol") orelse "(unknow)";
 
-        std.log.debug(
-            "\nInbound [{d}]: tag={s}, protocol={s}\n",
-            .{ index, tag, protocol },
-        );
+        if (debug_log) {
+            std.log.debug(
+                "\nInbound [{d}]: tag={s}, protocol={s}\n",
+                .{ index, tag, protocol },
+            );
+        }
 
         if (!std.mem.eql(u8, protocol, target_protocol)) {
             std.log.debug("protocol = {s} not target", .{protocol});
@@ -130,10 +134,12 @@ pub fn getClients(
             const email = getString(client, "email") orelse "(no email)";
             const flow = getString(client, "flow") orelse "(no flow)";
 
-            std.log.debug(
-                "  Client [{d}]: email={s}, id={s}, flow={s}\n",
-                .{ client_index, email, id, flow },
-            );
+            if (debug_log) {
+                std.log.debug(
+                    "  Client [{d}]: email={s}, id={s}, flow={s}\n",
+                    .{ client_index, email, id, flow },
+                );
+            }
 
             try clients.append(alloc, .{
                 .id = id,
@@ -156,9 +162,9 @@ pub fn getClientByNum(
     for (clients.items, 0..) |item, i| {
         if (target_num == i) {
             return .{
-               .id =  getString(item, "id") orelse continue,
-               .email =  getString(item, "email") orelse continue,
-               .flow = "",
+                .id = getString(item, "id") orelse continue,
+                .email = getString(item, "email") orelse continue,
+                .flow = "",
             };
         }
     }
