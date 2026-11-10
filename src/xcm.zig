@@ -83,6 +83,26 @@ fn saveConfig(
     };
 }
 
+pub fn printClient(clients: []const Client) void {
+    const uuid_rule = "--------------------------------------"; // 38 '-'
+
+    writeStdout("\nClients (flow: xtls-rprx-vision):\n", .{});
+
+    writeStdout("+------+------------------------------+{s}+\n", .{uuid_rule});
+    writeStdout("| #    | Name (email)                 | {s:<36} |\n", .{"UUID"});
+    writeStdout("+------+------------------------------+{s}+\n", .{uuid_rule});
+
+    for (clients, 0..) |client, i| {
+        const email = if (client.email.len > 28) client.email[0..25] ++ "..." else client.email;
+        writeStdout(
+            "| {d:<4} | {s:<28} | {s:<36} |\n",
+            .{ i, email, client.id },
+        );
+    }
+
+    writeStdout("+------+------------------------------+{s}+\n", .{uuid_rule});
+}
+
 pub fn main(init: std.process.Init) !void {
     var arena = std.heap.ArenaAllocator.init(init.gpa);
     defer arena.deinit();
@@ -260,16 +280,7 @@ pub fn main(init: std.process.Init) !void {
                 );
                 defer allocator.free(clients);
 
-                for (clients, 0..) |client, i| {
-                    writeStdout(
-                        \\ Client [{d}]: 
-                        \\              email:  {s} 
-                        \\              id:     {s} 
-                        \\              flow:   {s}
-                        \\
-                        \\
-                    , .{ i, client.email, client.id, client.flow });
-                }
+                printClient(clients);
             }
         } else {
             writeStdout("EOF or error \n", .{});
